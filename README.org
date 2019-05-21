@@ -1,0 +1,51 @@
+* active_learning_code
+
+This is the accompanying code repo for my active learning MRes dissertation
+
+** Organization
+#+begin_src bash :results value org
+tree
+#+end_src
+
+#+RESULTS:
+#+begin_src org
+.
+├── data
+├── docs
+│   ├── commands.rst
+│   ├── conf.py
+│   ├── getting-started.rst
+│   ├── index.rst
+│   ├── make.bat
+│   └── Makefile
+├── LICENSE
+├── Makefile
+├── models
+├── notebooks
+├── README.md
+├── references
+├── reports
+│   └── figures
+├── requirements.txt
+├── setup.py
+├── src
+│   ├── data
+│   │   ├── __init__.py
+│   │   └── make_dataset.py
+│   ├── features
+│   │   ├── build_features.py
+│   │   └── __init__.py
+│   ├── __init__.py
+│   ├── models
+│   │   ├── __init__.py
+│   │   ├── predict_model.py
+│   │   └── train_model.py
+│   └── visualization
+│       ├── __init__.py
+│       └── visualize.py
+├── test_environment.py
+└── tox.ini
+
+12 directories, 23 files
+#+end_src
+    
