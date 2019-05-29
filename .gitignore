@@ -183,3 +183,11 @@ flycheck_*.el
 
 
 # End of https://www.gitignore.io/api/emacs
+
+# Untrack figures
+/reports/figures/**/*
+/reports/figures/*
+
+# Untrack notebooks
+/notebooks/**/*
+/notebooks/*
