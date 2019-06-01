@@ -64,3 +64,66 @@ def visualise_function(f,
     cbar = fig.colorbar(pcolor_handle)
 
     return fig, ax
+
+
+def visualise_sampling_grid(X_sampled, gridsize=3):
+    """Show how herding algorithm samples the datapoints
+
+    Using X_sampled, which is the original design matrix with rows
+    permuted such that X_sampled[i] is the i'th row chosen by the sampling
+    algorithm. This enables calculating X_sampled by arbitrary algorithms
+    without having to hardcode algorithm specifics in the visualisation.
+
+    :param X_sampled: (n x d, np.ndarray) permuted design matrix
+    :param gridsize: (int) what size of the gridsize x gridsize to plot"""
+    fig, ax = plt.subplots(
+        gridsize, gridsize, figsize=(4 * gridsize, 4 * gridsize))
+
+    for i in range(0, gridsize):
+        for j in range(0, gridsize):
+            ax[i, j].scatter(X_sampled[:, 0], X_sampled[:, 1], alpha=0.5, s=10)
+            ax[i, j].scatter(X_sampled[:gridsize*i+j+1, 0],
+                             X_sampled[:gridsize*i+j+1, 1], marker='^', c='red', s=100)
+            ax[i, j].set_title(r'Sample n = {}'.format(gridsize*i+j+1))
+
+    return fig, ax
+
+
+def visualise_mmd_curve(mmd_curve, loglog=True, ylims=[0.0, 1.0]):
+    """Visualise the trace of the mmd score as a function of the size
+
+    Given a curve which has mmd_curve[t] = MMD(P, Q_t), visualise
+    both the normal plot and the log plot.
+
+    :param mmd_curve: (np.ndarraym,(stop_t,)) array of mmd scores
+    :param loglog: (bool) if true, plot loglog, else semilogy
+
+    :return fig, ax:"""
+    fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+
+    # first we do normal plot
+    ax[0].plot(mmd_curve, linestyle='-')
+    ax[0].set_xlabel(r't')
+    ax[0].set_ylabel(r'$MMD(\hat{P}, \hat{Q}_t)$')
+    ax[0].set_ylim(ylims)
+    ax[0].set_title('MMD vs t')
+
+    # NB: If we have relationships of kind MMD = O(t**-a)
+    # we will have relationships of the kind
+    # log(y) = log(C) - a log(t)
+    # If we have relationships like MMD = A exp(-O(t))
+    # we will have relationships of the kind
+    # log(y) = log(A) - C * t
+    # Choose the plot that makes sense given the method visualising
+
+    # Note, we for loglog and semilogy plot, can't have y <= 0,
+    # so we remove last element
+    t = np.arange(0, len(mmd_curve))
+    if loglog:
+        ax[1].loglog(t[0:-1], mmd_curve[0:-1], linestyle='-', marker='^')
+        ax[1].set_title('MMD vs t, loglog-plot')
+    else:
+        ax[1].semilogy(t[0:-1], mmd_curve[0:-1], linestyle='-', marker='^')
+        ax[1].set_title('MMD vs t, logy-plot')
+
+    return fig, ax
