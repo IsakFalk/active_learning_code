@@ -22,6 +22,10 @@ class MCSampling:
         self.sampled_order = np.random.permutation(self.K.shape[0])[
             :self.stop_t]
 
+    def run(self):
+        """Run the algorithm, consistent interface for calling self.run_{algorithm}() to self.run()"""
+        self.run_mc()
+
 
 def rho_t_func_kh(t):
     """Function for rho_t in FW to get KH"""
@@ -123,6 +127,10 @@ class KernelHerding:
             self.unsampled_indices = ~self.sampled_indices
             # Put objective value of t
             self.objective_curve[t] = J.min()
+
+    def run(self):
+        """Run the algorithm, consistent interface for calling self.run_{algorithm}() to self.run()"""
+        self.run_kernel_herding()
 
 
 class FrankWolfe:
@@ -261,6 +269,10 @@ class FrankWolfe:
             self._update_W(t)
             # Put objective value of t
             self.objective_curve[t] = J.min()
+
+    def run(self):
+        """Run the algorithm, consistent interface for calling self.run_{algorithm}() to self.run()"""
+        self.run_frank_wolfe()
 
 
 class FrankWolfeLineSearch:
@@ -440,12 +452,20 @@ class FrankWolfeLineSearch:
             # Put objective value of t
             self.objective_curve[t] = J.min()
 
+    def run(self):
+        """Run the algorithm, consistent interface for calling self.run_{algorithm}() to self.run()"""
+        self.run_frank_wolfe()
+
 
 class FrankWolfeInteriorPoint:
+    # TODO
+
     def __init__(self, K, stop_t=None):
         pass
 
 
 class BayesianQuadrature:
+    # TODO
+
     def __init__(self, K, stop_t=None):
         pass
