@@ -191,3 +191,7 @@ flycheck_*.el
 # Untrack notebooks
 /notebooks/**/*
 /notebooks/*
+
+# Data
+/data/**/*
+/data/*
