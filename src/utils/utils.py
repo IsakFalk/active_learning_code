@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 from scipy import linalg
 from scipy.spatial.distance import cdist, pdist, squareform
@@ -10,7 +11,8 @@ from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import GridSearchCV
 
 import src.algorithms as alg
-from src.PARAMATERS import data_experiments_dir
+import src.visualization.visualize as viz
+from src.PARAMATERS import data_experiments_dir, img_dir
 
 
 def gaussian_kernel_matrix(X, Y=None, s2=1.0):
@@ -342,7 +344,8 @@ def train_test_indices(n, train_ratio=0.7):
 
     Create a new random index for test and train set
     using the train_ratio as the proportion of train to
-    test data.
+    test data. Note that this function removes remainder
+    from indices, the blocks are all of same size.
 
     :param n: (int) size of original dataset
     :param train_ratio: (float) ratio of points that should be training data
@@ -437,6 +440,179 @@ def run_learning_curve_experiment(X, y, dataset_name, train_ratio=0.7):
 
     with open(save_dir / 'experiment_config.json', 'w') as json_file:
         json.dump(param_config, json_file)
+
+
+def k_fold_train_test_indices(n, k):
+    block_size = int(np.floor(n / k))
+    end_n = block_size * k
+    train_indices_list = []
+    test_indices_list = []
+    for fold in range(k):
+        if fold == 0:
+            train_array = np.arange(block_size, end_n)
+            test_array = np.arange(0,  block_size)
+        elif fold == k-1:
+            train_array = np.arange(0, fold * block_size)
+            test_array = np.arange(fold * block_size, end_n)
+        else:
+            train_array_1 = np.arange(0, fold * block_size)
+            test_array = np.arange(fold * block_size, (fold+1) * block_size)
+            train_array_2 = np.arange((fold + 1) * block_size, end_n)
+            train_array = np.concatenate((train_array_1, train_array_2))
+        train_indices_list.append(train_array)
+        test_indices_list.append(test_array)
+    return train_indices_list, test_indices_list
+
+
+def run_learning_curve_experiment_k_fold(X, y, dataset_name, val_ratio=0.2, k_folds=5, num_trajectories=10):
+    """Writes learning curves (using k-folds in order to get more stable results) to file in .npy format
+
+    Will want to change what we call in this as more algorithms are added"""
+
+    save_dir = 'learning_curves_k_fold-{}'.format(dataset_name)
+    save_dir = Path(data_experiments_dir) / save_dir
+    save_dir.mkdir(parents=True, exist_ok=False)
+
+    # First split data up into train+test and validation
+    # [train+test|validation]
+    # Then get the optimal hyper-parameters
+    n_full = X.shape[0]
+    val_idx = int(np.floor(n_full * val_ratio))
+    X_val, y_val = X[:val_idx], y[:val_idx]
+    X_tr_te, y_tr_te = X[val_idx:], y[val_idx:]
+    gkr_cv, tau_opt, s2_opt = pick_optimal_params_using_cv(X_val, y_val)
+    # Output the rest of the data
+    K, K_mmd = create_krr_mmd_kernel_matrices(X_tr_te, s2_opt)
+    n = K.shape[0]
+    block_size = int(np.floor(n / k_folds))
+
+    # We then split up the train and test indices using k_folds
+    train_indices_list, test_indices_list = k_fold_train_test_indices(
+        n, k_folds)
+
+    learning_curves_fw_train_k_folds = np.zeros(
+        (k_folds, block_size * (k_folds - 1)))
+    learning_curves_fw_test_k_folds = np.zeros(
+        (k_folds, block_size * (k_folds - 1)))
+    # dims: fold, sampled_trajectory, learning_curve
+    learning_curves_mc_train_k_folds = np.zeros(
+        (k_folds, num_trajectories, block_size * (k_folds - 1)))
+    learning_curves_mc_test_k_folds = np.zeros(
+        (k_folds, num_trajectories, block_size * (k_folds - 1)))
+
+    for fold, (train_indices, test_indices) in enumerate(zip(train_indices_list, test_indices_list)):
+        print('Running fold: {}'.format(fold))
+        learning_curves_mc_train, learning_curves_mc_test = sample_mc_learning_curves_train_test(
+            K, y_tr_te, train_indices, test_indices, tau_opt, num_trajectories=num_trajectories)
+        learning_curves_mc_train_k_folds[fold,
+                                         :, :] = learning_curves_mc_train.copy()
+        learning_curves_mc_test_k_folds[fold,
+                                        :, :] = learning_curves_mc_test.copy()
+
+        K_train = K[np.ix_(train_indices, train_indices)]
+        fw = alg.FrankWolfe(K_train)
+        fw.run_frank_wolfe()
+        learning_curve_fw_train, learning_curve_fw_test = calculate_learning_curves_train_test(K, y_tr_te,
+                                                                                               train_indices,
+                                                                                               test_indices,
+                                                                                               fw.sampled_order,
+                                                                                               tau_opt)
+        learning_curves_fw_train_k_folds[fold] = learning_curve_fw_train.copy()
+        learning_curves_fw_test_k_folds[fold] = learning_curve_fw_test.copy()
+
+    # Save all of the learning curves
+    np.save(save_dir / 'learning_curves_fw_train_k_folds',
+            learning_curves_fw_train_k_folds)
+    np.save(save_dir / 'learning_curves_fw_test_k_folds',
+            learning_curves_fw_test_k_folds)
+    np.save(save_dir / 'learning_curves_mc_train_k_folds',
+            learning_curves_mc_train_k_folds)
+    np.save(save_dir / 'learning_curves_mc_test_k_folds',
+            learning_curves_mc_test_k_folds)
+
+    # Save json file of interesting information for this particular run
+    euclidean_dist_q05 = kernel_quantile_heuristic(X, q=0.05)
+    euclidean_dist_q95 = kernel_quantile_heuristic(X, q=0.95)
+
+    param_config = {
+        'n': X.shape[0],
+        'n_tr_te': X_tr_te.shape[0],
+        'n_val': n_full - n,
+        'd': X.shape[1],
+        'k_folds': k_folds,
+        'test_fold_size': block_size,
+        'tau_opt_KRR': tau_opt,
+        's2_opt_KRR': s2_opt,
+        'euclidean_dist_q05': euclidean_dist_q05,
+        'euclidean_dist_q95': euclidean_dist_q95,
+        'time_created': str(datetime.now().strftime('%Y-%m-%d_%H:%M:%S'))
+    }
+
+    with open(save_dir / 'experiment_config.json', 'w') as json_file:
+        json.dump(param_config, json_file)
+
+
+def save_learning_curve_plot(experiment_dir_name):
+    experiment_dir = Path(data_experiments_dir) / experiment_dir_name
+
+    # Load mc learning curves
+    learning_curves_mc_train = np.load(
+        experiment_dir / 'learning_curves_mc_train.npy')
+    learning_curves_mc_test = np.load(
+        experiment_dir / 'learning_curves_mc_test.npy')
+    learning_curve_fw_train = np.load(
+        experiment_dir / 'learning_curve_fw_train.npy')
+    learning_curve_fw_test = np.load(
+        experiment_dir / 'learning_curve_fw_test.npy')
+    print(learning_curves_mc_test.shape)
+
+    fig, ax = plt.subplots(1, 2, figsize=(12, 6), sharey=True)
+
+    viz.plot_learning_curves_mc_vs_kh(
+        learning_curves_mc_test, learning_curve_fw_test, plot_type='semilogy', fig=fig, ax=ax[0])
+    viz.plot_learning_curves_mc_vs_kh(
+        learning_curves_mc_train, learning_curve_fw_train, plot_type='semilogy', fig=fig, ax=ax[1])
+
+    supervised_limit = learning_curve_fw_test[-1]
+    ax[0].axhline(y=supervised_limit, color='black',
+                  linestyle='--', label='Average loss on full dataset')
+    supervised_limit = learning_curve_fw_train[-1]
+    ax[1].axhline(y=supervised_limit, color='black',
+                  linestyle='--', label='Average loss on full dataset')
+
+    ax[0].set_title('Test loss')
+    ax[1].set_title('Train loss')
+    ax[1].legend()
+
+    fig.savefig(Path(img_dir) / experiment_dir_name)
+
+
+def save_learning_curve_k_fold_plot(experiment_dir_name):
+    experiment_dir = Path(data_experiments_dir) / experiment_dir_name
+
+    # Load mc learning curves
+    learning_curves_mc_train = np.load(
+        experiment_dir / 'learning_curves_mc_train_k_folds.npy')
+    learning_curves_mc_test = np.load(
+        experiment_dir / 'learning_curves_mc_test_k_folds.npy')
+    learning_curves_fw_train = np.load(
+        experiment_dir / 'learning_curves_fw_train_k_folds.npy')
+    learning_curves_fw_test = np.load(
+        experiment_dir / 'learning_curves_fw_test_k_folds.npy')
+
+    fig, ax = plt.subplots(1, 2, figsize=(12, 6), sharey=True)
+
+    viz.plot_learning_curves_mc_vs_kh_k_fold(
+        learning_curves_mc_test, learning_curves_fw_test, plot_type='semilogy', fig=fig, ax=ax[0])
+    viz.plot_learning_curves_mc_vs_kh_k_fold(
+        learning_curves_mc_train, learning_curves_fw_train, plot_type='semilogy', fig=fig, ax=ax[1])
+
+    ax[0].set_title('Test loss')
+    ax[1].set_title('Train loss')
+    ax[1].legend()
+
+    fig.savefig(Path(img_dir) / experiment_dir_name)
+
 
 ###############################################
 # sklearn type custom kernel ridge regression #
