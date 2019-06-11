@@ -4,7 +4,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 
-from src.PARAMATERS import img_dir, project_dir
+from src.PARAMATERS import data_experiments_dir, img_dir, project_dir
 
 
 def plot_2d_mog():
@@ -127,7 +127,55 @@ def plot_learning_curves_mc_vs_kh(learning_curves_mc, learning_curve_fw,
     return fig, ax
 
 
-# Rewrite to take ax and figure
+def plot_learning_curves_mc_vs_kh_k_fold(learning_curves_mc, learning_curves_fw,
+                                         fig, ax, plot_type='plot'):
+    """Plot learning curves for MC and KH when running k_fold cv
+
+    :param learning_curves_mc: (np.ndarray, (k_folds, num_curves, stop_t)) learning curves from MC
+    :param learning_curves_fw: (np.ndarray, (k_folds, stop_t)) learning curves from KH
+    :param fig, ax: fig and ax object
+    :param plot_types: Type of plot to use, ('plot', 'semilogy', 'loglog')
+
+    :return fig, ax:"""
+    assert learning_curves_mc.ndim == 3
+    assert learning_curves_fw.ndim == 2
+    t = np.arange(1, learning_curves_fw.shape[1] + 1)
+    # MC (avg)
+    mc_avg = learning_curves_mc.mean(axis=1)
+    mc_std = mc_avg.std(axis=0)
+    mc_avg_avg = mc_avg.mean(axis=0)
+    upper_ci = mc_avg_avg + mc_std
+    lower_ci = mc_avg_avg - mc_std
+    ax.fill_between(t, lower_ci, upper_ci, alpha=0.2,
+                    color='blue', label='MC (avg): 1 std CI')
+
+    # FW (raw)
+    fw_avg = learning_curves_fw.mean(axis=0)
+    fw_std = learning_curves_fw.std(axis=0)
+    upper_ci = fw_avg + fw_std
+    lower_ci = fw_avg - fw_std
+    ax.fill_between(t, lower_ci, upper_ci, alpha=0.2,
+                    color='red', label='FW (KH): 1 std CI')
+
+    # Depending on type of plot we use different plotting arguments
+    if plot_type == 'plot':
+        ax.plot(t, mc_avg_avg, color='blue', label='MC')
+        ax.plot(t, fw_avg, color='red', label='FW (KH)')
+    elif plot_type == 'semilogy':
+        ax.semilogy(t, mc_avg_avg, color='blue', label='MC')
+        ax.semilogy(t, fw_avg, color='red', label='FW (KH)')
+    elif plot_type == 'loglog':
+        ax.loglog(t, mc_avg_avg, color='blue', label='MC')
+        ax.loglog(t, fw_avg, color='red', label='FW (KH)')
+    else:
+        # Just do normal plot
+        ax.plot(t, mc_avg_avg, color='blue', label='MC')
+        ax.plot(t, fw_avg, color='red', label='FW (KH)')
+
+    return fig, ax
+
+
+# TODO: Rewrite to take ax and figure
 
 
 def visualise_mmd_curve(mmd_curve, loglog=True, ylims=[0.0, 1.0]):
