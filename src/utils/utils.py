@@ -655,8 +655,8 @@ class GaussianKernelRidgeRegression(BaseEstimator, RegressorMixin):
             K_xn = X
         else:
             K_xn = gaussian_kernel_matrix(X, self.X, s2=self.s2)
-        _y = K_xn @ self.alpha
-        return _y
+        y_pred = K_xn @ self.alpha
+        return y_pred
 
     def score(self, X, y):
         return -mean_squared_error(self.predict(X), y)
