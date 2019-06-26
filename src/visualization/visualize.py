@@ -175,6 +175,42 @@ def plot_learning_curves_mc_vs_kh_k_fold(learning_curves_mc, learning_curves_fw,
     return fig, ax
 
 
+def plot_learning_curves_traces_mc_vs_kh_k_fold(learning_curves_mc, learning_curves_fw,
+                                                fig, ax, plot_type='plot'):
+    """Plot learning curves for MC and KH when running k_fold cv
+
+    :param learning_curves_mc: (np.ndarray, (k_folds, num_curves, stop_t)) learning curves from MC
+    :param learning_curves_fw: (np.ndarray, (k_folds, stop_t)) learning curves from KH
+    :param fig, ax: fig and ax object
+    :param plot_types: Type of plot to use, ('plot', 'semilogy', 'loglog')
+
+    :return fig, ax:"""
+    assert learning_curves_mc.ndim == 3
+    assert learning_curves_fw.ndim == 2
+    k_folds = learning_curves_fw.shape[0]
+    t = np.arange(1, learning_curves_fw.shape[1] + 1)
+    # MC (avg)
+    mc_avg = learning_curves_mc.mean(axis=1)
+
+    # Depending on type of plot we use different plotting arguments
+    for i in range(k_folds):
+        if plot_type == 'plot':
+            ax.plot(t, mc_avg[i], color='blue', label='MC')
+            ax.plot(t, learning_curves_fw[i], color='red', label='FW (KH)')
+        elif plot_type == 'semilogy':
+            ax.semilogy(t, mc_avg[i], color='blue', label='MC')
+            ax.semilogy(t, learning_curves_fw[i], color='red', label='FW (KH)')
+        elif plot_type == 'loglog':
+            ax.loglog(t, mc_avg[i], color='blue', label='MC')
+            ax.loglog(t, learning_curves_fw[i], color='red', label='FW (KH)')
+        else:
+            # Just do normal plot
+            ax.plot(t, mc_avg[i], color='blue', label='MC')
+            ax.plot(t, learning_curves_fw[i], color='red', label='FW (KH)')
+
+    return fig, ax
+
+
 # TODO: Rewrite to take ax and figure
 
 
