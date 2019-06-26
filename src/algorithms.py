@@ -3,6 +3,7 @@ All algorithms used for subsampling dataset in a smart way
 """
 
 import numpy as np
+import scipy.linalg as linalg
 from tqdm import tqdm
 
 
@@ -23,8 +24,40 @@ class MCSampling:
             :self.stop_t]
 
     def run(self):
-        """Run the algorithm, consistent interface for calling self.run_{algorithm}() to self.run()"""
+        """Run the algorithm, consistent interface for calling self.run_{algorithm}()
+        to self.run()"""
         self.run_mc()
+
+
+class LeverageScoreSampling:
+    """
+    Sample the dataset according to leverage score sampling.
+
+    Note that we calculate the leverage scores according to
+    l_{tau, i} = (K(K + tau * I)^-1)_{ii} and not
+    l_{lambda, i} = (K(K + n * lambda * I)^-1)_{ii}
+    """
+
+    def __init__(self, K, tau, stop_t=None, greedy=True):
+        """greedy specifies if we sort or sample"""
+        self.K = K
+        self.tau = tau
+        self.n = self.K.shape[0]
+        self.greedy = greedy
+        self.sampled_order = np.zeros(stop_t)
+
+    def run(self):
+        """Run the algorithm, consistent interface for calling self.run_{algorithm}()
+        to self.run()"""
+        self.L_tau = linalg.solve(
+            a=(self.K + (self.tau + 1e-6) * np.eye(self.n)), b=self.K)
+        self.l_tau = np.diag(self.L_tau)
+        self.l_tau_normalised = self.l_tau / self.l_tau.sum()
+        if self.greedy:
+            self.sampled_order = np.argsort(self.l_tau)[::-1]
+        else:
+            self.sampled_order = np.random.choice(
+                np.arange(self.n), size=self.n, replace=False, p=self.l_tau_normalised)
 
 
 def rho_t_func_kh(t):
@@ -73,12 +106,12 @@ class KernelHerding:
         K_Qtm1Utm1 = self.K[np.ix_(self.sampled_indices,
                                    self.unsampled_indices)]
 
-        # Original factor is T, but since we count from 0, need to increment by 2
+        # Original factor is T, but since we count from 0, need to increment by 1
         # Get it in the form of the FW algorithm to be able to compare
-        J = (1.0 / t) * K_Qtm1Utm1.sum(axis=0) - \
-            (1.0 / self.n) * K_nUtm1.sum(axis=0)
+        J = (float(t) / self.n) * K_nUtm1.sum(axis=0) - K_Qtm1Utm1.sum(axis=0)
         assert J.shape == (self.unsampled_indices.sum(
         ),), "The output shape of J.shape should be ({},), is {} ".format(self.unsampled_indices.sum(), J.shape)
+        J = np.atleast_1d(J.squeeze())
         return J
 
     def restart(self):
@@ -111,22 +144,23 @@ class KernelHerding:
         self.sampled_order[0] = 0
         self.sampled_indices[0] = True
         self.unsampled_indices = ~self.sampled_indices
+        self.objective_curve[0] = np.nan
 
         for t in tqdm(range(1, self.stop_t)):
             # The objective function of all points we can sample
             J = self._objective_func(t)
-            # Get the index for the argmin
-            J_argmin = J.argmin()
+            # Get the index for the argmax
+            J_argmax = J.argmax()
             # The index is not correct as we removed all indices
             # which has been sampled, so we map back to the correct index
             map_back_to_correct_index = self.arange_indices[self.unsampled_indices]
-            sampled_index_at_t = map_back_to_correct_index[J_argmin]
+            sampled_index_at_t = map_back_to_correct_index[J_argmax]
             # Update the index arrays
             self.sampled_order[t] = sampled_index_at_t
             self.sampled_indices[sampled_index_at_t] = True
             self.unsampled_indices = ~self.sampled_indices
             # Put objective value of t
-            self.objective_curve[t] = J.min()
+            self.objective_curve[t] = J.max()
 
     def run(self):
         """Run the algorithm, consistent interface for calling self.run_{algorithm}() to self.run()"""
@@ -217,7 +251,7 @@ class FrankWolfe:
         J = weighted_sum - repulsive_sum
         assert J.shape == (1, self.unsampled_indices.sum(
         )), "The output shape of J.shape should be ({},), is {} ".format(self.unsampled_indices.sum(), J.shape)
-        J = J.squeeze()
+        J = np.atleast_1d(J.squeeze())
         return J
 
     def restart(self):
@@ -252,6 +286,7 @@ class FrankWolfe:
         self.sampled_indices[0] = True
         self.unsampled_indices = ~self.sampled_indices
         self.W[0, 0] = 1.0
+        self.objective_curve[0] = np.nan
 
         for t in tqdm(range(1, self.stop_t)):
             # The objective function of all points we can sample
@@ -300,8 +335,11 @@ class FrankWolfeLineSearch:
             self.n, self.n), "K should be of shape ({}, {}), is of shape {}".format(self.n, self.n, self.K.shape)
         assert self.stop_t > 0, "stop_t needs to be positive"
 
-        # Sanity check: keep objective values for each iteration
+        # Sanity check:
+        # - keep objective values for each iteration
+        # - keep rho_t to see the actual line-length
         self.objective_curve = np.zeros(self.stop_t)
+        self.rho_t = np.zeros(self.stop_t)
 
     def calculate_rho(self, t):
         """Calculate rho using line-search"""
@@ -399,7 +437,7 @@ class FrankWolfeLineSearch:
         J = weighted_sum - repulsive_sum
         assert J.shape == (1, self.unsampled_indices.sum(
         )), "The output shape of J.shape should be ({},), is {} ".format(self.unsampled_indices.sum(), J.shape)
-        J = J.squeeze()
+        J = np.atleast_1d(J.squeeze())
         return J
 
     def restart(self):
@@ -434,6 +472,8 @@ class FrankWolfeLineSearch:
         self.sampled_indices[0] = True
         self.unsampled_indices = ~self.sampled_indices
         self.W[0, 0] = 1.0
+        self.objective_curve[0] = np.nan
+        self.rho_t[0] = np.nan
 
         for t in tqdm(range(1, self.stop_t)):
             # The objective function of all points we can sample
@@ -451,6 +491,8 @@ class FrankWolfeLineSearch:
             self._update_W(t)
             # Put objective value of t
             self.objective_curve[t] = J.min()
+            # Put rho_t
+            self.rho_t[t] = self.calculate_rho(t)
 
     def run(self):
         """Run the algorithm, consistent interface for calling self.run_{algorithm}() to self.run()"""
@@ -464,8 +506,113 @@ class FrankWolfeInteriorPoint:
         pass
 
 
+# TODO: check that this works as expected
 class BayesianQuadrature:
-    # TODO
+    """
+    Notation, we let Qt denote the set of sampled points after finishing iteration t,
+    Ut denote the set of unsampled points after finishing iteration t. K_ab then corresponds
+    to the kernel matrix by taking the inner product \Phi_a^T \Phi_b in the RKHS.
+    """
 
     def __init__(self, K, stop_t=None):
-        pass
+        self.K = K
+        self.n = K.shape[0]
+        self.L = linalg.solve(
+            a=(K + 1e-3 * np.eye(self.n)), b=np.eye(self.n))
+        self.z = K.mean(axis=1).reshape(self.n, 1)
+        self.stop_t = stop_t
+        if self.stop_t is None:
+            self.stop_t = self.n
+        # self.W = z.T @ L from paper
+        self.w = self.z.T @ self.L
+        self.sampled_order = np.zeros(stop_t).astype(int)
+
+        # These just help run the algorithm
+        # These are all boolean, a one represents that
+        # the x_i at that index has been sampled / unsampled respectively
+        self.initial_indices = np.ones(self.n).astype(bool)
+        self.sampled_indices = np.zeros(self.n).astype(bool)
+        self.unsampled_indices = ~self.sampled_indices
+        self.arange_indices = np.arange(0, self.n).astype(int)
+
+        # Check for faults
+        assert self.K.shape == (
+            self.n, self.n), "K should be of shape ({}, {}), is of shape {}".format(self.n, self.n, self.K.shape)
+        assert self.L.shape == (
+            self.n, self.n), "L should be of shape ({}, {}), is of shape {}".format(self.n, self.n, self.L.shape)
+        assert self.stop_t > 0, "stop_t needs to be positive"
+
+        # Sanity check: keep objective values for each iteration
+        self.objective_curve = np.zeros(self.stop_t)
+
+    def _objective_func(self, t):
+        """Calculate the objective function using sampled_indices until time t
+
+        Note that this is a vectorised version of the one in the paper"""
+        z_Qtm1 = self.z[self.sampled_indices]
+        z_Utm1 = self.z[self.unsampled_indices]
+        L_Qtm1Utm1 = self.L[np.ix_(
+            self.sampled_indices, self.unsampled_indices)]
+
+        assert L_Qtm1Utm1.shape == (
+            t, self.n - t), "L_Qtm1Utm1 should have shape ({}, {}), has shape {}".format(t, self.n - t, L_Qtm1Utm1.shape)
+        assert z_Qtm1.shape == (
+            t, 1), "z_Qtm1 should have shape ({}, {}), has shape {}".format(t, 1, z_Qtm1.shape)
+        assert z_Utm1.shape == (
+            self.n - t, 1), "z_Utm1 should have shape ({}, {}), has shape {}".format(self.n - t, 1, z_Utm1.shape)
+
+        quadratic_term = (z_Qtm1.T @ L_Qtm1Utm1).T * z_Utm1
+        diagonal_term = np.diag(self.L[np.ix_(
+            self.unsampled_indices, self.unsampled_indices)]).reshape(-1, 1) * z_Utm1 ** 2
+        assert quadratic_term.shape == (self.n - t, 1)
+        assert diagonal_term.shape == (self.n - t, 1)
+        J = quadratic_term + diagonal_term
+        J = np.atleast_1d(J.squeeze())
+        assert J.shape == (
+            self.n - t,), "J should have shape ({},), has shape {}".format(self.n - t, J.shape)
+        return J
+
+    def restart(self):
+        """Start over, reinitialise everything"""
+        self.sampled_order = np.zeros(self.stop_t).astype(int)
+        self.initial_indices = np.ones(self.n).astype(bool)
+        self.sampled_indices = np.zeros(self.n).astype(bool)
+        self.unsampled_indices = ~self.sampled_indices
+        self.arange_indices = np.arange(0, self.n).astype(int)
+        self.objective_curve = np.zeros(self.stop_t)
+
+    def run(self):
+        """Bayesian herding on the empirical distribution of X through K
+
+        Run kernel herding on the dataset (x_i)_i^n using the kernel matrix
+        K represented as a numpy array of shape (n, n), where K_ij = K(x_i, x_j).
+        Since the herding algorithm gives a new ordering of the dataset corresponding
+        to what datapoint to include when we only return the indices of the new ordering.
+        This is an array called return_order such that return_order[t] = index of x returned at
+        end of t'th iteration of kernel herding.
+        """
+        self.restart()
+
+        # Initially (t=0) we sample x_0 always
+        self.sampled_order[0] = 0
+        self.sampled_indices[0] = True
+        self.unsampled_indices = ~self.sampled_indices
+        self.objective_curve[0] = np.nan
+
+        for t in tqdm(range(1, self.stop_t)):
+            # The objective function of all points we can sample
+            J = self._objective_func(t)
+            # Get the index for the argmin
+            J_argmax = J.argmax()
+            # The index is not correct as we removed all indices
+            # which has been sampled, so we map back to the correct index
+            map_back_to_correct_index = self.arange_indices[self.unsampled_indices]
+            sampled_index_at_t = map_back_to_correct_index[J_argmax]
+            # Update the index arrays
+            self.sampled_order[t] = sampled_index_at_t
+            self.sampled_indices[sampled_index_at_t] = True
+            self.unsampled_indices = ~self.sampled_indices
+            # Put objective value of t
+            self.objective_curve[t] = J.min()
+
+        self.w_reindexed = self.w.reshape(-1, 1)[self.sampled_order].squeeze()
