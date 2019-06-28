@@ -175,6 +175,120 @@ def plot_learning_curves_mc_vs_kh_k_fold(learning_curves_mc, learning_curves_fw,
     return fig, ax
 
 
+def plot_learning_curves_all_algorithms_k_fold(learning_curves_mc, learning_curves_fw, learning_curves_levscore,
+                                               fig, ax, plot_type='plot'):
+    """Plot learning curves for MC and KH when running k_fold cv
+
+    :param learning_curves_mc: (np.ndarray, (k_folds, num_curves, stop_t)) learning curves from MC
+    :param learning_curves_fw: (np.ndarray, (k_folds, stop_t)) learning curves from KH
+    :param learning_curves_levscore: (np.ndarray, (k_folds, stop_t)) learning curves from levscore
+    :param fig, ax: fig and ax object
+    :param plot_types: Type of plot to use, ('plot', 'semilogy', 'loglog')
+
+    :return fig, ax:"""
+    assert learning_curves_mc.ndim == 3
+    assert learning_curves_fw.ndim == 2
+    assert learning_curves_levscore.ndim == 2
+    t = np.arange(1, learning_curves_fw.shape[1] + 1)
+    # MC (avg)
+    mc_avg = learning_curves_mc.mean(axis=1)
+    mc_std = mc_avg.std(axis=0)
+    mc_avg_avg = mc_avg.mean(axis=0)
+    upper_ci = mc_avg_avg + mc_std
+    lower_ci = mc_avg_avg - mc_std
+    ax.fill_between(t, lower_ci, upper_ci, alpha=0.2,
+                    color='blue', label='MC (avg): 1 std CI')
+
+    # FW (raw)
+    fw_avg = learning_curves_fw.mean(axis=0)
+    fw_std = learning_curves_fw.std(axis=0)
+    upper_ci = fw_avg + fw_std
+    lower_ci = fw_avg - fw_std
+    ax.fill_between(t, lower_ci, upper_ci, alpha=0.2,
+                    color='red', label='FW (KH): 1 std CI')
+
+    # levscore (raw)
+    levscore_avg = learning_curves_levscore.mean(axis=0)
+    levscore_std = learning_curves_levscore.std(axis=0)
+    upper_ci = levscore_avg + levscore_std
+    lower_ci = levscore_avg - levscore_std
+    ax.fill_between(t, lower_ci, upper_ci, alpha=0.2,
+                    color='green', label='Levscore (deterministic): 1 std CI')
+
+    # Depending on type of plot we use different plotting arguments
+    if plot_type == 'plot':
+        ax.plot(t, mc_avg_avg, color='blue', label='MC')
+        ax.plot(t, fw_avg, color='red', label='FW (KH)')
+        ax.plot(t, levscore_avg, color='green',
+                label='Levscore (deterministic)')
+    elif plot_type == 'semilogy':
+        ax.semilogy(t, mc_avg_avg, color='blue', label='MC')
+        ax.semilogy(t, fw_avg, color='red', label='FW (KH)')
+        ax.semilogy(t, levscore_avg, color='green',
+                    label='Levscore (deterministic)')
+    elif plot_type == 'loglog':
+        ax.loglog(t, mc_avg_avg, color='blue', label='MC')
+        ax.loglog(t, fw_avg, color='red', label='FW (KH)')
+        ax.loglog(t, levscore_avg, color='green',
+                  label='Levscore (deterministic)')
+    else:
+        # Just do normal plot
+        ax.plot(t, mc_avg_avg, color='blue', label='MC')
+        ax.plot(t, fw_avg, color='red', label='FW (KH)')
+        ax.plot(t, levscore_avg, color='green',
+                label='Levscore (deterministic)')
+
+    return fig, ax
+
+
+def plot_learning_curves_traces_all_algorithms_k_fold(learning_curves_mc, learning_curves_fw, learning_curves_levscore,
+                                                      fig, ax, plot_type='plot'):
+    """Plot learning curves for MC and KH when running k_fold cv (traces)
+
+    :param learning_curves_mc: (np.ndarray, (k_folds, num_curves, stop_t)) learning curves from MC
+    :param learning_curves_fw: (np.ndarray, (k_folds, stop_t)) learning curves from KH
+    :param learning_curves_levscore: (np.ndarray, (k_folds, stop_t)) learning curves from levscore
+    :param fig, ax: fig and ax object
+    :param plot_types: Type of plot to use, ('plot', 'semilogy', 'loglog')
+
+    :return fig, ax:"""
+    assert learning_curves_mc.ndim == 3
+    assert learning_curves_fw.ndim == 2
+    assert learning_curves_levscore.ndim == 2
+
+    k_folds = learning_curves_fw.shape[0]
+    t = np.arange(1, learning_curves_fw.shape[1] + 1)
+    # MC (avg)
+    mc_avg = learning_curves_mc.mean(axis=1)
+
+    # Depending on type of plot we use different plotting arguments
+    for i in range(k_folds):
+        # Depending on type of plot we use different plotting arguments
+        if plot_type == 'plot':
+            ax.plot(t, mc_avg[i], color='blue', label='MC')
+            ax.plot(t, learning_curves_fw[i], color='red', label='FW (KH)')
+            ax.plot(t, learning_curves_levscore[i], color='green',
+                    label='Levscore (deterministic)')
+        elif plot_type == 'semilogy':
+            ax.semilogy(t, mc_avg[i], color='blue', label='MC')
+            ax.semilogy(t, learning_curves_fw[i], color='red', label='FW (KH)')
+            ax.semilogy(t, learning_curves_levscore[i], color='green',
+                        label='Levscore (deterministic)')
+        elif plot_type == 'loglog':
+            ax.loglog(t, mc_avg[i], color='blue', label='MC')
+            ax.loglog(t, learning_curves_fw[i], color='red', label='FW (KH)')
+            ax.loglog(t, learning_curves_levscore[i], color='green',
+                      label='Levscore (deterministic)')
+        else:
+            # Just do normal plot
+            ax.plot(t, mc_avg[i], color='blue', label='MC')
+            ax.plot(t, learning_curves_fw[i], color='red', label='FW (KH)')
+            ax.plot(t, learning_curves_levscore[i], color='green',
+                    label='Levscore (deterministic)')
+
+    return fig, ax
+
+
 def plot_learning_curves_traces_mc_vs_kh_k_fold(learning_curves_mc, learning_curves_fw,
                                                 fig, ax, plot_type='plot'):
     """Plot learning curves for MC and KH when running k_fold cv
