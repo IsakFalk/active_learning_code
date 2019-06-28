@@ -245,14 +245,13 @@ def create_cross_validated_object(X_val, y_val):
     :return gkrc_cs: (sklearn.model) cross validation GaussianKRRClassification object
     :return tau_opt: (float) optimal tau for KRRC
     :return s2_opt: (float) optimal s2 KRRC"""
-
     gkrc_cv, tau_opt, s2_opt = pick_optimal_params_using_cv(
         X_val, y_val)
 
-    return gkrc_cs, tau_opt, s2_opt
+    return gkrc_cv, tau_opt, s2_opt
 
 
-def run_learning_curve_experiment_k_fold(X, y, dataset_name, val_ratio=0.2, k_folds=5, deteriministic_config, random_config):
+def run_learning_curve_experiment_k_fold(X, y, dataset_name, val_ratio=0.2, k_folds=5, num_trajectories=5):
     """Writes learning curves (using k-folds in order to get more stable results) to file in .npy format
 
     Run k-fold cross validation on the dataset for all of the algorithms, passed
@@ -263,8 +262,7 @@ def run_learning_curve_experiment_k_fold(X, y, dataset_name, val_ratio=0.2, k_fo
     :param dataset_name: (str) string containing the dataset name
     :param val_ratio: (float) ratio of dataset to use to get optimal parameters
     :param k_fold: (int) number of folds to use
-    :param deteriministic_config: (dict) dictionary containing config for deterministic algorithms
-    :param random_config: (dict) dictionary containing config for random algorithms
+    :param num_trajectories: (int) number of trajectories to run mc algorithm for
     """
 
     save_dir = 'learning_curves_k_fold-{}'.format(dataset_name)
@@ -287,10 +285,17 @@ def run_learning_curve_experiment_k_fold(X, y, dataset_name, val_ratio=0.2, k_fo
     train_indices_list, test_indices_list = k_fold_train_test_indices(
         n, k_folds)
 
+    # Deterministic algorithms
+    # dims: fold, learning_curve
+    learning_curves_levscore_train_k_folds = np.zeros(
+        (k_folds, block_size * (k_folds - 1)))
+    learning_curves_levscore_test_k_folds = np.zeros(
+        (k_folds, block_size * (k_folds - 1)))
     learning_curves_fw_train_k_folds = np.zeros(
         (k_folds, block_size * (k_folds - 1)))
     learning_curves_fw_test_k_folds = np.zeros(
         (k_folds, block_size * (k_folds - 1)))
+    # Random algorithms
     # dims: fold, sampled_trajectory, learning_curve
     learning_curves_mc_train_k_folds = np.zeros(
         (k_folds, num_trajectories, block_size * (k_folds - 1)))
@@ -317,11 +322,27 @@ def run_learning_curve_experiment_k_fold(X, y, dataset_name, val_ratio=0.2, k_fo
         learning_curves_fw_train_k_folds[fold] = learning_curve_fw_train.copy()
         learning_curves_fw_test_k_folds[fold] = learning_curve_fw_test.copy()
 
+        levscore = alg.LeverageScoreSampling(K_train, tau_opt)
+        levscore.run()
+        learning_curve_levscore_train, learning_curve_levscore_test = calculate_learning_curves_train_test(K, y_tr_te,
+                                                                                                           train_indices,
+                                                                                                           test_indices,
+                                                                                                           levscore.sampled_order,
+                                                                                                           tau_opt)
+        learning_curves_levscore_train_k_folds[fold] = learning_curve_levscore_train.copy(
+        )
+        learning_curves_levscore_test_k_folds[fold] = learning_curve_levscore_test.copy(
+        )
+
     # Save all of the learning curves
     np.save(save_dir / 'learning_curves_fw_train_k_folds',
             learning_curves_fw_train_k_folds)
     np.save(save_dir / 'learning_curves_fw_test_k_folds',
             learning_curves_fw_test_k_folds)
+    np.save(save_dir / 'learning_curves_levscore_train_k_folds',
+            learning_curves_levscore_train_k_folds)
+    np.save(save_dir / 'learning_curves_levscore_test_k_folds',
+            learning_curves_levscore_test_k_folds)
     np.save(save_dir / 'learning_curves_mc_train_k_folds',
             learning_curves_mc_train_k_folds)
     np.save(save_dir / 'learning_curves_mc_test_k_folds',
@@ -334,7 +355,6 @@ def run_learning_curve_experiment_k_fold(X, y, dataset_name, val_ratio=0.2, k_fo
     param_config = {
         'n': X.shape[0],
         'n_tr_te': X_tr_te.shape[0],
-        'n_val': n_full - n,
         'd': X.shape[1],
         'k_folds': k_folds,
         'test_fold_size': block_size,
@@ -361,19 +381,23 @@ def save_learning_curve_k_fold_plot(experiment_dir_name, traces=True, plot_type=
         experiment_dir / 'learning_curves_fw_train_k_folds.npy')
     learning_curves_fw_test = np.load(
         experiment_dir / 'learning_curves_fw_test_k_folds.npy')
+    learning_curves_levscore_train = np.load(
+        experiment_dir / 'learning_curves_levscore_train_k_folds.npy')
+    learning_curves_levscore_test = np.load(
+        experiment_dir / 'learning_curves_levscore_test_k_folds.npy')
 
     fig, ax = plt.subplots(1, 2, figsize=(12, 6), sharey=True)
 
     if traces:
-        viz.plot_learning_curves_traces_mc_vs_kh_k_fold(
-            learning_curves_mc_test, learning_curves_fw_test, plot_type=plot_type, fig=fig, ax=ax[0])
-        viz.plot_learning_curves_traces_mc_vs_kh_k_fold(
-            learning_curves_mc_train, learning_curves_fw_train, plot_type=plot_type, fig=fig, ax=ax[1])
+        viz.plot_learning_curves_traces_all_algorithms_k_fold(
+            learning_curves_mc_test, learning_curves_fw_test, learning_curves_levscore_test, fig=fig, ax=ax[0], plot_type=plot_type)
+        viz.plot_learning_curves_traces_all_algorithms_k_fold(
+            learning_curves_mc_train, learning_curves_fw_train, learning_curves_levscore_train, fig=fig, ax=ax[1], plot_type=plot_type)
     else:
-        viz.plot_learning_curves_mc_vs_kh_k_fold(
-            learning_curves_mc_test, learning_curves_fw_test, plot_type=plot_type, fig=fig, ax=ax[0])
-        viz.plot_learning_curves_mc_vs_kh_k_fold(
-            learning_curves_mc_train, learning_curves_fw_train, plot_type=plot_type, fig=fig, ax=ax[1])
+        viz.plot_learning_curves_all_algorithms_k_fold(
+            learning_curves_mc_test, learning_curves_fw_test, learning_curves_levscore_test, fig=fig, ax=ax[0], plot_type=plot_type)
+        viz.plot_learning_curves_all_algorithms_k_fold(
+            learning_curves_mc_train, learning_curves_fw_train, learning_curves_levscore_train, fig=fig, ax=ax[1], plot_type=plot_type)
 
     # Style plot: accuracy is always between 0 and 1
     ax[0].set_ylabel('Accuracy')
