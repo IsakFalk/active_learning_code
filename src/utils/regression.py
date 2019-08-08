@@ -1,3 +1,5 @@
+import json
+from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -7,9 +9,12 @@ from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import GridSearchCV
 
+import src.algorithms as alg
 import src.visualization.visualize as viz
 from src.PARAMATERS import data_experiments_dir, img_dir
-from src.utils.utils import gaussian_kernel_matrix, kernel_quantile_heuristic
+from src.utils.utils import (create_krr_mmd_kernel_matrices,
+                             gaussian_kernel_matrix, k_fold_train_test_indices,
+                             kernel_quantile_heuristic)
 
 
 def pick_optimal_params_using_cv(X, y, cv=5, iid=False):
@@ -29,12 +34,12 @@ def pick_optimal_params_using_cv(X, y, cv=5, iid=False):
     :return s2: (float) optimal s2 for GKRR"""
     gaussian_kr = GaussianKernelRidgeRegression()
 
-    q10_sq_dist = kernel_quantile_heuristic(X, q=0.05)
-    q90_sq_dist = kernel_quantile_heuristic(X, q=0.95)
+    q05_sq_dist = kernel_quantile_heuristic(X, q=0.05)
+    q95_sq_dist = kernel_quantile_heuristic(X, q=0.95)
 
     param_grid = dict(
-        tau=np.logspace(-3, 1, 5),
-        s2=np.linspace(q10_sq_dist * 0.1, q90_sq_dist * 10, 5)
+        tau=np.logspace(-5, 1, 7),
+        s2=np.linspace(q05_sq_dist * 0.1, q95_sq_dist * 10, 5)
     )
 
     gkr_cv = GridSearchCV(estimator=gaussian_kr,
@@ -150,7 +155,319 @@ def calculate_learning_curves_train_test(K, y, train_indices, test_indices, samp
     return learning_curve_train, learning_curve_test
 
 
-def save_learning_curve_k_fold_plot(experiment_dir_name):
+def sample_mc_learning_curves_train_test(K, y, train_indices, test_indices, tau, num_trajectories=5):
+    """Sample learning curves when using a stochastic herding algorithm
+
+    :param sampling_algorithm: (src.alg herding algorithm) instance of kernel herding algorithm
+    """
+    mc = alg.MCSampling(K[np.ix_(train_indices, train_indices)])
+
+    learning_curves_mc_train = []
+    learning_curves_mc_test = []
+    for i in range(num_trajectories):
+        mc.run_mc()
+        lc_train, lc_test = calculate_learning_curves_train_test(K=K, y=y,
+                                                                 train_indices=train_indices,
+                                                                 test_indices=test_indices,
+                                                                 sampled_order_train=mc.sampled_order,
+                                                                 tau=tau)
+        learning_curves_mc_train.append(lc_train)
+        learning_curves_mc_test.append(lc_test)
+
+    learning_curves_mc_train = np.array(learning_curves_mc_train)
+    learning_curves_mc_test = np.array(learning_curves_mc_test)
+    return learning_curves_mc_train, learning_curves_mc_test
+
+
+def sample_learning_curves_for_random_algorithm(sampling_algorithm, K, y, train_indices, test_indices, tau, num_trajectories=5):
+    """Sample learning curves (train, test) when using a stochastic herding algorithm"""
+    algo = sampling_algorithm(K[np.ix_(train_indices, train_indices)])
+
+    learning_curves_train = []
+    learning_curves_test = []
+    for i in range(num_trajectories):
+        algo.run()
+        lc_train, lc_test = calculate_learning_curves_train_test(K=K, y=y,
+                                                                 train_indices=train_indices,
+                                                                 test_indices=test_indices,
+                                                                 sampled_order_train=algo.sampled_order,
+                                                                 tau=tau)
+        learning_curves_train.append(lc_train)
+        learning_curves_test.append(lc_test)
+
+    learning_curves_train = np.array(learning_curves_train)
+    learning_curves_test = np.array(learning_curves_test)
+    return learning_curves_train, learning_curves_test
+
+
+def get_train_test_val_split(X, y, val_ratio=0.2):
+    """Split dataset (X, y) into validation and test+train split
+
+    This is mainly a utility function to help with cross validation"""
+    n_full = X.shape[0]
+    val_idx = int(np.floor(n_full * val_ratio))
+    X_val, y_val = X[:val_idx], y[:val_idx]
+    X_tr_te, y_tr_te = X[val_idx:], y[val_idx:]
+    return X_tr_te, y_tr_te, X_val, y_val
+
+
+def create_cross_validated_object(X_val, y_val):
+    """Get the optimal cross validation parameters using validation dataset
+
+    :param X_val: (np.ndarray, (n, d)) validation design matrix
+    :param y_val: (np.ndarray, (n,)) validation array
+
+    :return gkrr_cs: (sklearn.model) cross validation GaussianKRRClassification object
+    :return tau_opt: (float) optimal tau for KRRC
+    :return s2_opt: (float) optimal s2 KRRC"""
+    gkrr_cv, tau_opt, s2_opt = pick_optimal_params_using_cv(
+        X_val, y_val)
+
+    return gkrr_cv, tau_opt, s2_opt
+
+
+def run_learning_curve_experiment_k_fold(X, y, dataset_name, val_ratio=0.2, k_folds=5, num_trajectories=5):
+    """Writes learning curves (using k-folds in order to get more stable results) to file in .npy format
+
+    Run k-fold cross validation on the dataset for all of the algorithms, passed
+    through deterministic_config and random_config. The dictionaries are built as follows
+
+    :param X: (np.ndarray, (n, d)) design matrix
+    :param y: (np.ndarray, (n,)) output
+    :param dataset_name: (str) string containing the dataset name
+    :param val_ratio: (float) ratio of dataset to use to get optimal parameters
+    :param k_fold: (int) number of folds to use
+    :param num_trajectories: (int) number of trajectories to run mc algorithm for
+    """
+
+    save_dir = 'learning_curves_k_fold-{}'.format(dataset_name)
+    save_dir = Path(data_experiments_dir) / save_dir
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    # First split data up into train+test and validation
+    # [train+test|validation]
+    # Then get the optimal hyper-parameters
+    X_tr_te, y_tr_te, X_val, y_val = get_train_test_val_split(X, y, val_ratio)
+    gkrr_cs, tau_opt, s2_opt = create_cross_validated_object(
+        X_val, y_val)
+
+    # Output the rest of the data
+    K, K_mmd = create_krr_mmd_kernel_matrices(X_tr_te, s2_opt)
+    n = K.shape[0]
+    block_size = int(np.floor(n / k_folds))
+
+    # We then split up the train and test indices using k_folds
+    train_indices_list, test_indices_list = k_fold_train_test_indices(
+        n, k_folds)
+
+    # Deterministic algorithms
+    # dims: fold, learning_curve
+    learning_curves_levscore_train_k_folds = np.zeros(
+        (k_folds, block_size * (k_folds - 1)))
+    learning_curves_levscore_test_k_folds = np.zeros(
+        (k_folds, block_size * (k_folds - 1)))
+    learning_curves_fw_train_k_folds = np.zeros(
+        (k_folds, block_size * (k_folds - 1)))
+    learning_curves_fw_test_k_folds = np.zeros(
+        (k_folds, block_size * (k_folds - 1)))
+    # Random algorithms
+    # dims: fold, sampled_trajectory, learning_curve
+    learning_curves_mc_train_k_folds = np.zeros(
+        (k_folds, num_trajectories, block_size * (k_folds - 1)))
+    learning_curves_mc_test_k_folds = np.zeros(
+        (k_folds, num_trajectories, block_size * (k_folds - 1)))
+
+    for fold, (train_indices, test_indices) in enumerate(zip(train_indices_list, test_indices_list)):
+        print('Running fold: {}'.format(fold))
+        learning_curves_mc_train, learning_curves_mc_test = sample_mc_learning_curves_train_test(
+            K, y_tr_te, train_indices, test_indices, tau_opt, num_trajectories=num_trajectories)
+        learning_curves_mc_train_k_folds[fold,
+                                         :, :] = learning_curves_mc_train.copy()
+        learning_curves_mc_test_k_folds[fold,
+                                        :, :] = learning_curves_mc_test.copy()
+
+        K_train = K[np.ix_(train_indices, train_indices)]
+        fw = alg.FrankWolfe(K_train)
+        fw.run_frank_wolfe()
+        learning_curve_fw_train, learning_curve_fw_test = calculate_learning_curves_train_test(K, y_tr_te,
+                                                                                               train_indices,
+                                                                                               test_indices,
+                                                                                               fw.sampled_order,
+                                                                                               tau_opt)
+        learning_curves_fw_train_k_folds[fold] = learning_curve_fw_train.copy()
+        learning_curves_fw_test_k_folds[fold] = learning_curve_fw_test.copy()
+
+        levscore = alg.LeverageScoreSampling(K_train, tau_opt)
+        levscore.run()
+        learning_curve_levscore_train, learning_curve_levscore_test = calculate_learning_curves_train_test(K, y_tr_te,
+                                                                                                           train_indices,
+                                                                                                           test_indices,
+                                                                                                           levscore.sampled_order,
+                                                                                                           tau_opt)
+        learning_curves_levscore_train_k_folds[fold] = learning_curve_levscore_train.copy(
+        )
+        learning_curves_levscore_test_k_folds[fold] = learning_curve_levscore_test.copy(
+        )
+
+    # Save all of the learning curves
+    np.save(save_dir / 'learning_curves_fw_train_k_folds',
+            learning_curves_fw_train_k_folds)
+    np.save(save_dir / 'learning_curves_fw_test_k_folds',
+            learning_curves_fw_test_k_folds)
+    np.save(save_dir / 'learning_curves_levscore_train_k_folds',
+            learning_curves_levscore_train_k_folds)
+    np.save(save_dir / 'learning_curves_levscore_test_k_folds',
+            learning_curves_levscore_test_k_folds)
+    np.save(save_dir / 'learning_curves_mc_train_k_folds',
+            learning_curves_mc_train_k_folds)
+    np.save(save_dir / 'learning_curves_mc_test_k_folds',
+            learning_curves_mc_test_k_folds)
+
+    # Save json file of interesting information for this particular run
+    euclidean_dist_q05 = kernel_quantile_heuristic(X, q=0.05)
+    euclidean_dist_q95 = kernel_quantile_heuristic(X, q=0.95)
+
+    param_config = {
+        'n': X.shape[0],
+        'n_tr_te': X_tr_te.shape[0],
+        'd': X.shape[1],
+        'k_folds': k_folds,
+        'test_fold_size': block_size,
+        'tau_opt_KRR': tau_opt,
+        's2_opt_KRR': s2_opt,
+        'euclidean_dist_q05': euclidean_dist_q05,
+        'euclidean_dist_q95': euclidean_dist_q95,
+        'time_created': str(datetime.now().strftime('%Y-%m-%d_%H:%M:%S'))
+    }
+
+    with open(save_dir / 'experiment_config.json', 'w') as json_file:
+        json.dump(param_config, json_file)
+
+
+def run_learning_curve_experiment_k_fold_realisable(X, y, dataset_name, val_ratio=0.2, k_folds=5, num_trajectories=5):
+    """Writes learning curves for the realisable setting
+    (using k-folds in order to get more stable results) to file in .npy format
+
+    Run k-fold cross validation on the dataset for all of the algorithms, passed
+    through deterministic_config and random_config. The dictionaries are built as follows
+
+    :param X: (np.ndarray, (n, d)) design matrix
+    :param y: (np.ndarray, (n,)) output
+    :param dataset_name: (str) string containing the dataset name
+    :param val_ratio: (float) ratio of dataset to use to get optimal parameters
+    :param k_fold: (int) number of folds to use
+    :param num_trajectories: (int) number of trajectories to run mc algorithm for
+    """
+
+    save_dir = 'learning_curves_k_fold_realisable-{}'.format(dataset_name)
+    save_dir = Path(data_experiments_dir) / save_dir
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    # Realisable setting so we fit optimal KRR to this and then
+    # recreate y
+    gkrr_cs, tau_opt, s2_opt = create_cross_validated_object(
+        X, y)
+    y = gkrr_cs.predict(X)
+
+    # First split data up into train+test and validation
+    # [train+test|validation]
+    # Then get the optimal hyper-parameters
+    X_tr_te, y_tr_te, X_val, y_val = get_train_test_val_split(X, y, val_ratio)
+
+    # Output the rest of the data
+    K, K_mmd = create_krr_mmd_kernel_matrices(X_tr_te, s2_opt)
+    n = K.shape[0]
+    block_size = int(np.floor(n / k_folds))
+
+    # We then split up the train and test indices using k_folds
+    train_indices_list, test_indices_list = k_fold_train_test_indices(
+        n, k_folds)
+
+    # Deterministic algorithms
+    # dims: fold, learning_curve
+    learning_curves_levscore_train_k_folds = np.zeros(
+        (k_folds, block_size * (k_folds - 1)))
+    learning_curves_levscore_test_k_folds = np.zeros(
+        (k_folds, block_size * (k_folds - 1)))
+    learning_curves_fw_train_k_folds = np.zeros(
+        (k_folds, block_size * (k_folds - 1)))
+    learning_curves_fw_test_k_folds = np.zeros(
+        (k_folds, block_size * (k_folds - 1)))
+    # Random algorithms
+    # dims: fold, sampled_trajectory, learning_curve
+    learning_curves_mc_train_k_folds = np.zeros(
+        (k_folds, num_trajectories, block_size * (k_folds - 1)))
+    learning_curves_mc_test_k_folds = np.zeros(
+        (k_folds, num_trajectories, block_size * (k_folds - 1)))
+
+    for fold, (train_indices, test_indices) in enumerate(zip(train_indices_list, test_indices_list)):
+        print('Running fold: {}'.format(fold))
+        learning_curves_mc_train, learning_curves_mc_test = sample_mc_learning_curves_train_test(
+            K, y_tr_te, train_indices, test_indices, tau_opt, num_trajectories=num_trajectories)
+        learning_curves_mc_train_k_folds[fold,
+                                         :, :] = learning_curves_mc_train.copy()
+        learning_curves_mc_test_k_folds[fold,
+                                        :, :] = learning_curves_mc_test.copy()
+
+        K_train = K[np.ix_(train_indices, train_indices)]
+        fw = alg.FrankWolfe(K_train)
+        fw.run_frank_wolfe()
+        learning_curve_fw_train, learning_curve_fw_test = calculate_learning_curves_train_test(K, y_tr_te,
+                                                                                               train_indices,
+                                                                                               test_indices,
+                                                                                               fw.sampled_order,
+                                                                                               tau_opt)
+        learning_curves_fw_train_k_folds[fold] = learning_curve_fw_train.copy()
+        learning_curves_fw_test_k_folds[fold] = learning_curve_fw_test.copy()
+
+        levscore = alg.LeverageScoreSampling(K_train, tau_opt)
+        levscore.run()
+        learning_curve_levscore_train, learning_curve_levscore_test = calculate_learning_curves_train_test(K, y_tr_te,
+                                                                                                           train_indices,
+                                                                                                           test_indices,
+                                                                                                           levscore.sampled_order,
+                                                                                                           tau_opt)
+        learning_curves_levscore_train_k_folds[fold] = learning_curve_levscore_train.copy(
+        )
+        learning_curves_levscore_test_k_folds[fold] = learning_curve_levscore_test.copy(
+        )
+
+    # Save all of the learning curves
+    np.save(save_dir / 'learning_curves_fw_train_k_folds',
+            learning_curves_fw_train_k_folds)
+    np.save(save_dir / 'learning_curves_fw_test_k_folds',
+            learning_curves_fw_test_k_folds)
+    np.save(save_dir / 'learning_curves_levscore_train_k_folds',
+            learning_curves_levscore_train_k_folds)
+    np.save(save_dir / 'learning_curves_levscore_test_k_folds',
+            learning_curves_levscore_test_k_folds)
+    np.save(save_dir / 'learning_curves_mc_train_k_folds',
+            learning_curves_mc_train_k_folds)
+    np.save(save_dir / 'learning_curves_mc_test_k_folds',
+            learning_curves_mc_test_k_folds)
+
+    # Save json file of interesting information for this particular run
+    euclidean_dist_q05 = kernel_quantile_heuristic(X, q=0.05)
+    euclidean_dist_q95 = kernel_quantile_heuristic(X, q=0.95)
+
+    param_config = {
+        'n': X.shape[0],
+        'n_tr_te': X_tr_te.shape[0],
+        'd': X.shape[1],
+        'k_folds': k_folds,
+        'test_fold_size': block_size,
+        'tau_opt_KRR': tau_opt,
+        's2_opt_KRR': s2_opt,
+        'euclidean_dist_q05': euclidean_dist_q05,
+        'euclidean_dist_q95': euclidean_dist_q95,
+        'time_created': str(datetime.now().strftime('%Y-%m-%d_%H:%M:%S'))
+    }
+
+    with open(save_dir / 'experiment_config.json', 'w') as json_file:
+        json.dump(param_config, json_file)
+
+
+def save_learning_curve_k_fold_plot(experiment_dir_name, traces=True, plot_type='plot'):
     experiment_dir = Path(data_experiments_dir) / experiment_dir_name
 
     # Load mc learning curves
@@ -162,23 +479,38 @@ def save_learning_curve_k_fold_plot(experiment_dir_name):
         experiment_dir / 'learning_curves_fw_train_k_folds.npy')
     learning_curves_fw_test = np.load(
         experiment_dir / 'learning_curves_fw_test_k_folds.npy')
+    learning_curves_levscore_train = np.load(
+        experiment_dir / 'learning_curves_levscore_train_k_folds.npy')
+    learning_curves_levscore_test = np.load(
+        experiment_dir / 'learning_curves_levscore_test_k_folds.npy')
 
     fig, ax = plt.subplots(1, 2, figsize=(12, 6), sharey=True)
 
-    viz.plot_learning_curves_mc_vs_kh_k_fold(
-        learning_curves_mc_test, learning_curves_fw_test, plot_type='semilogy', fig=fig, ax=ax[0])
-    viz.plot_learning_curves_mc_vs_kh_k_fold(
-        learning_curves_mc_train, learning_curves_fw_train, plot_type='semilogy', fig=fig, ax=ax[1])
+    if traces:
+        viz.plot_learning_curves_traces_all_algorithms_k_fold(
+            learning_curves_mc_test, learning_curves_fw_test, learning_curves_levscore_test, fig=fig, ax=ax[0], plot_type=plot_type)
+        viz.plot_learning_curves_traces_all_algorithms_k_fold(
+            learning_curves_mc_train, learning_curves_fw_train, learning_curves_levscore_train, fig=fig, ax=ax[1], plot_type=plot_type)
+    else:
+        viz.plot_learning_curves_all_algorithms_k_fold(
+            learning_curves_mc_test, learning_curves_fw_test, learning_curves_levscore_test, fig=fig, ax=ax[0], plot_type=plot_type)
+        viz.plot_learning_curves_all_algorithms_k_fold(
+            learning_curves_mc_train, learning_curves_fw_train, learning_curves_levscore_train, fig=fig, ax=ax[1], plot_type=plot_type)
 
-    ax[0].set_title('Test set')
     ax[0].set_ylabel('MSE')
     ax[0].set_xlabel('t')
-    ax[1].set_title('Train set')
+    ax[0].set_title('Test set')
+
     ax[1].set_xlabel('t')
-    ax[1].legend()
+    ax[1].set_title('Train set')
+    lgd = ax[1].legend(bbox_to_anchor=(1.04, 1), loc="upper left")
 
-    fig.savefig(Path(img_dir) / experiment_dir_name)
+    save_name = str(experiment_dir_name) + \
+        '-plot_type:{}-traces:{}'.format(plot_type, traces)
 
+    fig.savefig(Path(img_dir) / save_name,
+                bbox_extra_artists=(lgd,), bbox_inches='tight')
+    plt.close(fig)
 
 ###############################################
 # sklearn type custom kernel ridge regression #
@@ -213,7 +545,7 @@ class GaussianKernelRidgeRegression(BaseEstimator, RegressorMixin):
 
             self.X = X
             self.K = gaussian_kernel_matrix(X, s2=self.s2)
-        a = (self.K + self.tau * np.eye(self.n))
+        a = (self.K + self.n * self.tau * np.eye(self.n))
         self.alpha = linalg.solve(a=a, b=y, assume_a='pos')
 
     def predict(self, X):
@@ -223,6 +555,7 @@ class GaussianKernelRidgeRegression(BaseEstimator, RegressorMixin):
         else:
             K_xn = gaussian_kernel_matrix(X, self.X, s2=self.s2)
         y_pred = K_xn @ self.alpha
+
         return y_pred
 
     def score(self, X, y):
