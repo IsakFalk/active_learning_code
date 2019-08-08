@@ -34,12 +34,12 @@ def pick_optimal_params_using_cv(X, y, cv=5, iid=False):
     :return s2: (float) optimal s2 for GKRR"""
     gaussian_krc = GaussianKRRClassification()
 
-    q10_sq_dist = kernel_quantile_heuristic(X, q=0.05)
-    q90_sq_dist = kernel_quantile_heuristic(X, q=0.95)
+    q05_sq_dist = kernel_quantile_heuristic(X, q=0.05)
+    q95_sq_dist = kernel_quantile_heuristic(X, q=0.95)
 
     param_grid = dict(
-        tau=np.logspace(-3, 1, 5),
-        s2=np.linspace(q10_sq_dist * 0.1, q90_sq_dist * 10, 5)
+        tau=np.logspace(-5, 1, 7),
+        s2=np.linspace(q05_sq_dist * 0.1, q95_sq_dist * 10, 5)
     )
 
     gkrc_cv = GridSearchCV(estimator=gaussian_krc,
@@ -408,10 +408,14 @@ def save_learning_curve_k_fold_plot(experiment_dir_name, traces=True, plot_type=
     ax[1].set_xlabel('t')
     ax[1].set_ylim([0.0, 1.0])
     ax[1].set_title('Train set')
-    ax[1].legend()
+    lgd = ax[1].legend(bbox_to_anchor=(1.04, 1), loc="upper left")
 
-    fig.savefig(Path(img_dir) / experiment_dir_name)
+    save_name = str(experiment_dir_name) + \
+        '-plot_type:{}-traces:{}'.format(plot_type, traces)
 
+    fig.savefig(Path(img_dir) / save_name,
+                bbox_extra_artists=(lgd,), bbox_inches='tight')
+    plt.close(fig)
 
 ###############################################
 # sklearn type custom kernel ridge regression #
@@ -425,8 +429,8 @@ class GaussianKRRClassification(BaseEstimator, ClassifierMixin):
 
     for implementing classification using KRR together with a minimisation problem.
 
-    This means that KRR is of the form min sum_i^n (f(x_i) - y_i)**2 + tau\|f\|_H**2
-    leading to alpha = (K + tau * I)^-1 Y.
+    This means that KRR is of the form min 1/n sum_i^n (f(x_i) - y_i)**2 + tau\|f\|_H**2
+    leading to alpha = (K + n*tau * I)^-1 Y.
 
     We assume that Y is of the form (np.ndarray, n) and that
     if we have C classes they are encoded from 0:C-1."""
@@ -460,7 +464,7 @@ class GaussianKRRClassification(BaseEstimator, ClassifierMixin):
         self.from_enum_to_class = np.vstack(
             (self.train_classes_enumerated, self.train_classes))
 
-        self.a = (self.K + self.tau * np.eye(self.n))
+        self.a = (self.K + self.n * self.tau * np.eye(self.n))
 
         return self
 
