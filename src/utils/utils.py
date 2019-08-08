@@ -15,6 +15,12 @@ import src.visualization.visualize as viz
 from src.PARAMATERS import data_experiments_dir, img_dir
 
 
+def subsample_dataset(X, y, n_subsample=700):
+    n, d = X.shape
+    subsample_indices = np.random.permutation(n)[:n_subsample]
+    return X[subsample_indices], y[subsample_indices]
+
+
 def gaussian_kernel_matrix(X, Y=None, s2=1.0):
     """
     X: [n, d] matrix, where n is the number of samples, d is the dimension
