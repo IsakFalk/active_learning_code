@@ -498,15 +498,9 @@ class FrankWolfeLineSearch:
         """Run the algorithm, consistent interface for calling self.run_{algorithm}() to self.run()"""
         self.run_frank_wolfe()
 
-
-class FrankWolfeInteriorPoint:
-    # TODO
-
-    def __init__(self, K, stop_t=None):
-        pass
-
-
 # TODO: check that this works as expected
+
+
 class BayesianQuadrature:
     """
     Notation, we let Qt denote the set of sampled points after finishing iteration t,
