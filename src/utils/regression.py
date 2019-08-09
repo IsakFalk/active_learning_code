@@ -35,11 +35,11 @@ def pick_optimal_params_using_cv(X, y, cv=5, iid=False):
     gaussian_kr = GaussianKernelRidgeRegression()
 
     q05_sq_dist = kernel_quantile_heuristic(X, q=0.05)
-    q95_sq_dist = kernel_quantile_heuristic(X, q=0.95)
+    q99_sq_dist = kernel_quantile_heuristic(X, q=0.99)
 
     param_grid = dict(
-        tau=np.logspace(-5, 1, 7),
-        s2=np.linspace(q05_sq_dist * 0.1, q95_sq_dist * 10, 5)
+        tau=np.logspace(-8, 0, 9),
+        s2=np.linspace(1e-3, q99_sq_dist, 9)
     )
 
     gkr_cv = GridSearchCV(estimator=gaussian_kr,
@@ -287,7 +287,8 @@ def run_learning_curve_experiment_k_fold(X, y, dataset_name, val_ratio=0.2, k_fo
                                         :, :] = learning_curves_mc_test.copy()
 
         K_train = K[np.ix_(train_indices, train_indices)]
-        fw = alg.FrankWolfe(K_train)
+        K_mmd_train = K_mmd[np.ix_(train_indices, train_indices)]
+        fw = alg.FrankWolfe(K_mmd_train)
         fw.run_frank_wolfe()
         learning_curve_fw_train, learning_curve_fw_test = calculate_learning_curves_train_test(K, y_tr_te,
                                                                                                train_indices,
@@ -365,9 +366,9 @@ def run_learning_curve_experiment_k_fold_realisable(X, y, dataset_name, val_rati
 
     # Realisable setting so we fit optimal KRR to this and then
     # recreate y
-    gkrr_cs, tau_opt, s2_opt = create_cross_validated_object(
+    gkrr_cv, tau_opt, s2_opt = create_cross_validated_object(
         X, y)
-    y = gkrr_cs.predict(X)
+    y = gkrr_cv.predict(X)
 
     # First split data up into train+test and validation
     # [train+test|validation]
@@ -410,7 +411,8 @@ def run_learning_curve_experiment_k_fold_realisable(X, y, dataset_name, val_rati
                                         :, :] = learning_curves_mc_test.copy()
 
         K_train = K[np.ix_(train_indices, train_indices)]
-        fw = alg.FrankWolfe(K_train)
+        K_mmd_train = K_mmd[np.ix_(train_indices, train_indices)]
+        fw = alg.FrankWolfe(K_mmd_train)
         fw.run_frank_wolfe()
         learning_curve_fw_train, learning_curve_fw_test = calculate_learning_curves_train_test(K, y_tr_te,
                                                                                                train_indices,
