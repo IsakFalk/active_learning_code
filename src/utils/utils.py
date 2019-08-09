@@ -200,10 +200,8 @@ def kernel_quantile_heuristic(X, q=0.5):
     Using the quantile heurstic we calculate the best s2.
 
     :return quantile_heuristic_s2: (float) s2 picked according to quantile heuristic"""
-    n, d = X.shape
-    pairwise_sq_dists = squareform(pdist(X, 'sqeuclidean'))
-    pairwise_sq_dists_unbiased = pairwise_sq_dists[np.triu_indices(n, k=1)]
-    quantile_heuristic_s2 = np.quantile(pairwise_sq_dists_unbiased, q=q)
+    pairwise_sq_dists = pdist(X, 'sqeuclidean')
+    quantile_heuristic_s2 = np.quantile(pairwise_sq_dists, q=q)
     return quantile_heuristic_s2
 
 
