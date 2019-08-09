@@ -41,6 +41,7 @@ if __name__ == "__main__":
 
     # str(name) => load_function
     datasets_regression = {
+        'boston': load_functions.load_boston,
         'white_wine': load_functions.load_white_wine,
         'red_wine': load_functions.load_red_wine,
         'student_performance_math': load_functions.load_student_performance_math,
