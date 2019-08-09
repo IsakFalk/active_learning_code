@@ -3,13 +3,27 @@ from pathlib import Path
 import mnist
 import numpy as np
 import pandas as pd
+import sklearn.datasets as skl_datasets
 
 from src.PARAMATERS import data_external_dir
 
 data_external_dir = Path(data_external_dir)
+
 ##############
 # Regression #
 ##############
+
+
+def load_boston(normalise=True):
+    X, y = skl_datasets.load_boston(return_X_y=True)
+
+    if normalise:
+        X -= X.mean(axis=0)
+        X /= X.std(axis=0)
+        y -= y.mean()
+        y /= y.std()
+
+    return X, y
 
 
 def load_white_wine(normalise=True):
