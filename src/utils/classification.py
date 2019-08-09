@@ -35,11 +35,11 @@ def pick_optimal_params_using_cv(X, y, cv=5, iid=False):
     gaussian_krc = GaussianKRRClassification()
 
     q05_sq_dist = kernel_quantile_heuristic(X, q=0.05)
-    q95_sq_dist = kernel_quantile_heuristic(X, q=0.95)
+    q99_sq_dist = kernel_quantile_heuristic(X, q=0.99)
 
     param_grid = dict(
-        tau=np.logspace(-5, 1, 7),
-        s2=np.linspace(q05_sq_dist * 0.1, q95_sq_dist * 10, 5)
+        tau=np.logspace(-8, 0, 9),
+        s2=np.linspace(1e-3, q99_sq_dist, 9)
     )
 
     gkrc_cv = GridSearchCV(estimator=gaussian_krc,
@@ -312,6 +312,7 @@ def run_learning_curve_experiment_k_fold(X, y, dataset_name, val_ratio=0.2, k_fo
                                         :, :] = learning_curves_mc_test.copy()
 
         K_train = K[np.ix_(train_indices, train_indices)]
+        K_mmd_train = K_mmd[np.ix_(train_indices, train_indices)]
         fw = alg.FrankWolfe(K_train)
         fw.run_frank_wolfe()
         learning_curve_fw_train, learning_curve_fw_test = calculate_learning_curves_train_test(K, y_tr_te,
