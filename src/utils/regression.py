@@ -469,7 +469,12 @@ def run_learning_curve_experiment_k_fold_realisable(X, y, dataset_name, val_rati
         json.dump(param_config, json_file)
 
 
-def save_learning_curve_k_fold_plot(experiment_dir_name, traces=True, plot_type='plot'):
+def save_learning_curve_k_fold_plot(experiment_dir_name,
+                                    traces=True,
+                                    plot_type='plot',
+                                    plot_test=True,
+                                    xlim=None,
+                                    ylim=None):
     experiment_dir = Path(data_experiments_dir) / experiment_dir_name
 
     # Load mc learning curves
@@ -486,26 +491,31 @@ def save_learning_curve_k_fold_plot(experiment_dir_name, traces=True, plot_type=
     learning_curves_levscore_test = np.load(
         experiment_dir / 'learning_curves_levscore_test_k_folds.npy')
 
-    fig, ax = plt.subplots(1, 2, figsize=(12, 6), sharey=True)
+    fig, ax = plt.subplots(1, 1)
 
     if traces:
-        viz.plot_learning_curves_traces_all_algorithms_k_fold(
-            learning_curves_mc_test, learning_curves_fw_test, learning_curves_levscore_test, fig=fig, ax=ax[0], plot_type=plot_type)
-        viz.plot_learning_curves_traces_all_algorithms_k_fold(
-            learning_curves_mc_train, learning_curves_fw_train, learning_curves_levscore_train, fig=fig, ax=ax[1], plot_type=plot_type)
+        if plot_test:
+            viz.plot_learning_curves_traces_all_algorithms_k_fold(
+                learning_curves_mc_test, learning_curves_fw_test, learning_curves_levscore_test, fig=fig, ax=ax, plot_type=plot_type)
+        else:
+            viz.plot_learning_curves_traces_all_algorithms_k_fold(
+                learning_curves_mc_train, learning_curves_fw_train, learning_curves_levscore_train, fig=fig, ax=ax, plot_type=plot_type)
     else:
-        viz.plot_learning_curves_all_algorithms_k_fold(
-            learning_curves_mc_test, learning_curves_fw_test, learning_curves_levscore_test, fig=fig, ax=ax[0], plot_type=plot_type)
-        viz.plot_learning_curves_all_algorithms_k_fold(
-            learning_curves_mc_train, learning_curves_fw_train, learning_curves_levscore_train, fig=fig, ax=ax[1], plot_type=plot_type)
+        if plot_test:
+            viz.plot_learning_curves_all_algorithms_k_fold(
+                learning_curves_mc_test, learning_curves_fw_test, learning_curves_levscore_test, fig=fig, ax=ax, plot_type=plot_type)
+        else:
+            viz.plot_learning_curves_all_algorithms_k_fold(
+                learning_curves_mc_train, learning_curves_fw_train, learning_curves_levscore_train, fig=fig, ax=ax, plot_type=plot_type)
 
-    ax[0].set_ylabel('MSE')
-    ax[0].set_xlabel('t')
-    ax[0].set_title('Test set')
+    ax.set_ylabel('MSE')
+    ax.set_xlabel('t')
+    if ylim:
+        ax.set_ylim(ylim)
+    if xlim:
+        ax.set_xlim(xlim)
 
-    ax[1].set_xlabel('t')
-    ax[1].set_title('Train set')
-    lgd = ax[1].legend(bbox_to_anchor=(1.04, 1), loc="upper left")
+    lgd = ax.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
 
     save_name = str(experiment_dir_name) + \
         '-plot_type:{}-traces:{}'.format(plot_type, traces)
