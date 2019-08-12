@@ -1,8 +1,12 @@
+from pathlib import Path
+
 import itertools
 import logging
 
 import src.utils.classification as clf_utils
 import src.utils.regression as reg_utils
+
+from src.PARAMATERS import img_dir
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -28,20 +32,24 @@ if __name__ == "__main__":
         'yeast'
     ]
 
+    # If directory not in place, create it
+    # Path(img_dir).mkdir(parents=True, exist_ok=True)
+    print(Path(img_dir))
+
     # Regression plots
     for reg_dir in regression_dirs:
-        for traces, plot_type in itertools.product([False], ['plot']):
-            logging.info('Plotting {} with kwargs (traces: {}, plot_type: {})'.format(
-                reg_dir, traces, plot_type))
+        for traces, plot_type, xlim in itertools.product([False], ['plot'], [0, 100]):
+            logging.info('Plotting {} with kwargs (traces: {}, plot_type: {}, xlim: {})'.format(
+                reg_dir, traces, plot_type, xlim))
             reg_utils.save_learning_curve_k_fold_plot(
-                'learning_curves_k_fold-{}'.format(reg_dir), traces=traces, plot_type=plot_type)
+                'learning_curves_k_fold-{}'.format(reg_dir), traces=traces, plot_type=plot_type, xlim=xlim)
             reg_utils.save_learning_curve_k_fold_plot(
                 'learning_curves_k_fold_realisable-{}'.format(reg_dir), traces=traces, plot_type=plot_type)
 
     # Classification plots
     for clf_dir in classification_dirs:
-        for traces, plot_type in itertools.product([False], ['plot']):
-            logging.info('Plotting {} with kwargs (traces: {}, plot_type: {})'.format(
-                reg_dir, traces, plot_type))
+        for traces, plot_type in itertools.product([False], ['plot'], [0, 100]):
+            logging.info('Plotting {} with kwargs (traces: {}, plot_type: {}, xlim: {})'.format(
+                reg_dir, traces, plot_type, xlim))
             clf_utils.save_learning_curve_k_fold_plot(
                 'learning_curves_k_fold-{}'.format(clf_dir), traces=traces, plot_type=plot_type)
