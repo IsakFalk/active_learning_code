@@ -325,9 +325,6 @@ def plot_learning_curves_traces_mc_vs_kh_k_fold(learning_curves_mc, learning_cur
     return fig, ax
 
 
-# TODO: Rewrite to take ax and figure
-
-
 def visualise_mmd_curve(mmd_curve, loglog=True, ylims=[0.0, 1.0]):
     """Visualise the trace of the mmd score as a function of the size
 
