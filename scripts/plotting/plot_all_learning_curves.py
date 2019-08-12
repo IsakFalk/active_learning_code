@@ -30,7 +30,7 @@ if __name__ == "__main__":
 
     # Regression plots
     for reg_dir in regression_dirs:
-        for traces, plot_type in itertools.product([False], ['plot']):
+        for traces, plot_type in itertools.product([False], ['plot', 'semilogy']):
             logging.info('Plotting {} with kwargs (traces: {}, plot_type: {})'.format(
                 reg_dir, traces, plot_type))
             reg_utils.save_learning_curve_k_fold_plot(

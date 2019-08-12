@@ -10,7 +10,7 @@ import src.utils.regression as reg_utils
 from src.utils.utils import subsample_dataset
 
 # Seed rng to make reproducible
-np.random.seed(2019)
+np.random.seed(123)
 
 
 """Calculate all of the learning curves in one go
