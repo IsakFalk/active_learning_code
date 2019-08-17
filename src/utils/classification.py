@@ -3,6 +3,8 @@ from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+# To get labels to be texified
+plt.rc('text', usetex=True)
 import numpy as np
 import scipy.linalg as linalg
 from sklearn.base import BaseEstimator, ClassifierMixin
@@ -393,7 +395,7 @@ def save_learning_curve_k_fold_plot(experiment_dir_name,
     learning_curves_levscore_test = np.load(
         experiment_dir / 'learning_curves_levscore_test_k_folds.npy')
 
-    fig, ax = plt.subplots(1, 1)
+    fig, ax = plt.subplots(1, 1, figsize=(8, 5))
 
     if traces:
         if plot_test:
@@ -412,7 +414,7 @@ def save_learning_curve_k_fold_plot(experiment_dir_name,
 
     # Style plot: accuracy is always between 0 and 1
     ax.set_ylabel('Accuracy')
-    ax.set_xlabel('t')
+    ax.set_xlabel(r'$t$')
     if ylim:
         ax.set_ylim(ylim)
     else:
@@ -421,13 +423,12 @@ def save_learning_curve_k_fold_plot(experiment_dir_name,
     if xlim:
         ax.set_xlim(xlim)
 
-    lgd = ax.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
+    handles, labels = ax.get_legend_handles_labels()
+    lgd = ax.legend(handles=handles[:3], labels=labels[:3], loc="lower right")
 
-    save_name = str(experiment_dir_name) + \
-        '-plot_type:{}-traces:{}'.format(plot_type, traces)
-
+    save_name = str(experiment_dir_name)
     fig.savefig(Path(img_dir) / save_name,
-                bbox_extra_artists=(lgd,), bbox_inches='tight')
+                bbox_extra_artists=(lgd,), bbox_inches='tight', dpi=600)
     plt.close(fig)
 
 ###############################################
