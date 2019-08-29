@@ -1,0 +1,6 @@
+Dataset,n,d,lambda,sigma
+bike sharing (day),731,6,0.001,3.43
+boston,506,13,0.001,3.28
+concrete,1000,8,0.0001,2.51
+red wine,1000,11,0.001,10.9
+white wine,1000,11,0.01,2.98
