@@ -6,7 +6,7 @@ work, mainly the hardcoded path in ~PARAMETERS.py~ which has to be changed to
 the path to the git repo on your computer.
 
 ** Organization
-#+begin_export ascii
+#+begin_src bash
 .
 ├── data
 │   ├── experiments
@@ -24,7 +24,8 @@ the path to the git repo on your computer.
     ├── features
     ├── utils
     └── visualization
-#+end_export
+#+end_src
+
 ** data
 The directory where all the data is held, including the ~experiments~ directory
 where the result of the experiments are output, including logs and learning
