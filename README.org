@@ -5,8 +5,6 @@ machine, some troubleshooting and change of code might be necessary for this to
 work, mainly the hardcoded path in ~PARAMETERS.py~ which has to be changed to
 the path to the git repo on your computer.
 
-The accompanying 
- 
 ** Organization
 #+begin_export ascii
 .
