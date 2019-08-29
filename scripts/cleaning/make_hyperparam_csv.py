@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import sys
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
@@ -15,18 +16,18 @@ Take the hyperparams for all experiments
 and put them in a csv file
 """
 
-regression_datasets_dict = {
-    "bike_sharing_day": "bike sharing (day)",
-    "boston": "boston",
-    "concrete": "concrete",
-    "red_wine": "red wine",
-    "white_wine": "white wine"
-}
+regression_datasets_dict = OrderedDict([
+    ("bike_sharing_day", "bike sharing (day)"),
+    ("boston", "boston"),
+    ("concrete", "concrete"),
+    ("red_wine", "red wine"),
+    ("white_wine", "white wine")
+])
 
-classification_datasets_dict = {
-    "mnist": "mnist",
-    "yeast": "yeast"
-}
+classification_datasets_dict = OrderedDict([
+    ("mnist", "mnist"),
+    ("yeast", "yeast")
+])
 
 
 def load_hyperparams(path_to_experiment):
@@ -36,8 +37,7 @@ def load_hyperparams(path_to_experiment):
         n = json_dict['n']
         d = json_dict['d']
         lambda_opt = json_dict['tau_opt_KRR']
-        s_opt = np.sqrt(json_dict['s2_opt_KRR'])
-
+        s_opt = np.around(np.sqrt(json_dict['s2_opt_KRR']), decimals=2)
     return n, d, lambda_opt, s_opt
 
 

@@ -3,9 +3,6 @@ from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-# To get labels to be texified
-plt.rc('text', usetex=True)
-plt.rc('fon')
 import numpy as np
 import scipy.linalg as linalg
 from sklearn.base import BaseEstimator, RegressorMixin
@@ -18,6 +15,10 @@ from src.PARAMATERS import data_experiments_dir, img_dir
 from src.utils.utils import (create_krr_mmd_kernel_matrices,
                              gaussian_kernel_matrix, k_fold_train_test_indices,
                              kernel_quantile_heuristic)
+
+# To get labels to be texified
+plt.rc('text', usetex=True)
+plt.rc('fon')
 
 
 def pick_optimal_params_using_cv(X, y, cv=5, iid=False):
@@ -182,6 +183,33 @@ def sample_mc_learning_curves_train_test(K, y, train_indices, test_indices, tau,
     return learning_curves_mc_train, learning_curves_mc_test
 
 
+def sample_levscore_random_learning_curves_train_test(K, y, train_indices, test_indices, tau, num_trajectories=5):
+    """Sample learning curves when using a stochastic herding algorithm
+
+    :param sampling_algorithm: (src.alg herding algorithm) instance of kernel herding algorithm
+    """
+    levscore_random = alg.LeverageScoreSampling(
+        K[np.ix_(train_indices, train_indices)], tau, stop_t=None, greedy=False)
+
+    learning_curves_levscore_random_train = []
+    learning_curves_levscore_random_test = []
+    for i in range(num_trajectories):
+        levscore_random.run()
+        lc_train, lc_test = calculate_learning_curves_train_test(K=K, y=y,
+                                                                 train_indices=train_indices,
+                                                                 test_indices=test_indices,
+                                                                 sampled_order_train=levscore_random.sampled_order,
+                                                                 tau=tau)
+        learning_curves_levscore_random_train.append(lc_train)
+        learning_curves_levscore_random_test.append(lc_test)
+
+    learning_curves_levscore_random_train = np.array(
+        learning_curves_levscore_random_train)
+    learning_curves_levscore_random_test = np.array(
+        learning_curves_levscore_random_test)
+    return learning_curves_levscore_random_train, learning_curves_levscore_random_test
+
+
 def sample_learning_curves_for_random_algorithm(sampling_algorithm, K, y, train_indices, test_indices, tau, num_trajectories=5):
     """Sample learning curves (train, test) when using a stochastic herding algorithm"""
     algo = sampling_algorithm(K[np.ix_(train_indices, train_indices)])
@@ -251,7 +279,7 @@ def run_learning_curve_experiment_k_fold(X, y, dataset_name, val_ratio=0.2, k_fo
     # [train+test|validation]
     # Then get the optimal hyper-parameters
     X_tr_te, y_tr_te, X_val, y_val = get_train_test_val_split(X, y, val_ratio)
-    gkrr_cs, tau_opt, s2_opt = create_cross_validated_object(
+    gkrc_cs, tau_opt, s2_opt = create_cross_validated_object(
         X_val, y_val)
 
     # Output the rest of the data
@@ -279,6 +307,10 @@ def run_learning_curve_experiment_k_fold(X, y, dataset_name, val_ratio=0.2, k_fo
         (k_folds, num_trajectories, block_size * (k_folds - 1)))
     learning_curves_mc_test_k_folds = np.zeros(
         (k_folds, num_trajectories, block_size * (k_folds - 1)))
+    learning_curves_levscore_random_train_k_folds = np.zeros(
+        (k_folds, num_trajectories, block_size * (k_folds - 1)))
+    learning_curves_levscore_random_test_k_folds = np.zeros(
+        (k_folds, num_trajectories, block_size * (k_folds - 1)))
 
     for fold, (train_indices, test_indices) in enumerate(zip(train_indices_list, test_indices_list)):
         print('Running fold: {}'.format(fold))
@@ -289,9 +321,16 @@ def run_learning_curve_experiment_k_fold(X, y, dataset_name, val_ratio=0.2, k_fo
         learning_curves_mc_test_k_folds[fold,
                                         :, :] = learning_curves_mc_test.copy()
 
+        learning_curves_levscore_random_train, learning_curves_levscore_random_test = sample_levscore_random_learning_curves_train_test(
+            K, y_tr_te, train_indices, test_indices, tau_opt, num_trajectories=num_trajectories)
+        learning_curves_levscore_random_train_k_folds[fold,
+                                                      :, :] = learning_curves_levscore_random_train.copy()
+        learning_curves_levscore_random_test_k_folds[fold,
+                                                     :, :] = learning_curves_levscore_random_test.copy()
+
         K_train = K[np.ix_(train_indices, train_indices)]
         K_mmd_train = K_mmd[np.ix_(train_indices, train_indices)]
-        fw = alg.FrankWolfe(K_mmd_train)
+        fw = alg.FrankWolfe(K_train)
         fw.run_frank_wolfe()
         learning_curve_fw_train, learning_curve_fw_test = calculate_learning_curves_train_test(K, y_tr_te,
                                                                                                train_indices,
@@ -322,6 +361,10 @@ def run_learning_curve_experiment_k_fold(X, y, dataset_name, val_ratio=0.2, k_fo
             learning_curves_levscore_train_k_folds)
     np.save(save_dir / 'learning_curves_levscore_test_k_folds',
             learning_curves_levscore_test_k_folds)
+    np.save(save_dir / 'learning_curves_levscore_random_train_k_folds',
+            learning_curves_levscore_random_train_k_folds)
+    np.save(save_dir / 'learning_curves_levscore_random_test_k_folds',
+            learning_curves_levscore_random_test_k_folds)
     np.save(save_dir / 'learning_curves_mc_train_k_folds',
             learning_curves_mc_train_k_folds)
     np.save(save_dir / 'learning_curves_mc_test_k_folds',
@@ -383,7 +426,7 @@ def run_learning_curve_experiment_k_fold_realisable(X, y, dataset_name, val_rati
     n = K.shape[0]
     block_size = int(np.floor(n / k_folds))
 
-    # We then split up the train and test indices using k_folds
+    # We then split up the train and test indices using k_fold
     train_indices_list, test_indices_list = k_fold_train_test_indices(
         n, k_folds)
 
@@ -403,6 +446,10 @@ def run_learning_curve_experiment_k_fold_realisable(X, y, dataset_name, val_rati
         (k_folds, num_trajectories, block_size * (k_folds - 1)))
     learning_curves_mc_test_k_folds = np.zeros(
         (k_folds, num_trajectories, block_size * (k_folds - 1)))
+    learning_curves_levscore_random_train_k_folds = np.zeros(
+        (k_folds, num_trajectories, block_size * (k_folds - 1)))
+    learning_curves_levscore_random_test_k_folds = np.zeros(
+        (k_folds, num_trajectories, block_size * (k_folds - 1)))
 
     for fold, (train_indices, test_indices) in enumerate(zip(train_indices_list, test_indices_list)):
         print('Running fold: {}'.format(fold))
@@ -413,9 +460,16 @@ def run_learning_curve_experiment_k_fold_realisable(X, y, dataset_name, val_rati
         learning_curves_mc_test_k_folds[fold,
                                         :, :] = learning_curves_mc_test.copy()
 
+        learning_curves_levscore_random_train, learning_curves_levscore_random_test = sample_levscore_random_learning_curves_train_test(
+            K, y_tr_te, train_indices, test_indices, tau_opt, num_trajectories=num_trajectories)
+        learning_curves_levscore_random_train_k_folds[fold,
+                                                      :, :] = learning_curves_levscore_random_train.copy()
+        learning_curves_levscore_random_test_k_folds[fold,
+                                                     :, :] = learning_curves_levscore_random_test.copy()
+
         K_train = K[np.ix_(train_indices, train_indices)]
         K_mmd_train = K_mmd[np.ix_(train_indices, train_indices)]
-        fw = alg.FrankWolfe(K_mmd_train)
+        fw = alg.FrankWolfe(K_train)
         fw.run_frank_wolfe()
         learning_curve_fw_train, learning_curve_fw_test = calculate_learning_curves_train_test(K, y_tr_te,
                                                                                                train_indices,
@@ -446,6 +500,10 @@ def run_learning_curve_experiment_k_fold_realisable(X, y, dataset_name, val_rati
             learning_curves_levscore_train_k_folds)
     np.save(save_dir / 'learning_curves_levscore_test_k_folds',
             learning_curves_levscore_test_k_folds)
+    np.save(save_dir / 'learning_curves_levscore_random_train_k_folds',
+            learning_curves_levscore_random_train_k_folds)
+    np.save(save_dir / 'learning_curves_levscore_random_test_k_folds',
+            learning_curves_levscore_random_test_k_folds)
     np.save(save_dir / 'learning_curves_mc_train_k_folds',
             learning_curves_mc_train_k_folds)
     np.save(save_dir / 'learning_curves_mc_test_k_folds',
@@ -493,26 +551,30 @@ def save_learning_curve_k_fold_plot(experiment_dir_name,
         experiment_dir / 'learning_curves_levscore_train_k_folds.npy')
     learning_curves_levscore_test = np.load(
         experiment_dir / 'learning_curves_levscore_test_k_folds.npy')
+    learning_curves_levscore_random_train = np.load(
+        experiment_dir / 'learning_curves_levscore_random_train_k_folds.npy')
+    learning_curves_levscore_random_test = np.load(
+        experiment_dir / 'learning_curves_levscore_random_test_k_folds.npy')
 
     fig, ax = plt.subplots(1, 1, figsize=(8, 5))
 
     if traces:
         if plot_test:
             viz.plot_learning_curves_traces_all_algorithms_k_fold(
-                learning_curves_mc_test, learning_curves_fw_test, learning_curves_levscore_test, fig=fig, ax=ax, plot_type=plot_type)
+                learning_curves_mc_test, learning_curves_fw_test, learning_curves_levscore_test, learning_curves_levscore_random_test, fig=fig, ax=ax, plot_type=plot_type)
         else:
             viz.plot_learning_curves_traces_all_algorithms_k_fold(
-                learning_curves_mc_train, learning_curves_fw_train, learning_curves_levscore_train, fig=fig, ax=ax, plot_type=plot_type)
+                learning_curves_mc_train, learning_curves_fw_train, learning_curves_levscore_train, learning_curves_levscore_random_test, fig=fig, ax=ax, plot_type=plot_type)
     else:
         if plot_test:
             viz.plot_learning_curves_all_algorithms_k_fold(
-                learning_curves_mc_test, learning_curves_fw_test, learning_curves_levscore_test, fig=fig, ax=ax, plot_type=plot_type)
+                learning_curves_mc_test, learning_curves_fw_test, learning_curves_levscore_test, learning_curves_levscore_random_test, fig=fig, ax=ax, plot_type=plot_type)
         else:
             viz.plot_learning_curves_all_algorithms_k_fold(
-                learning_curves_mc_train, learning_curves_fw_train, learning_curves_levscore_train, fig=fig, ax=ax, plot_type=plot_type)
+                learning_curves_mc_train, learning_curves_fw_train, learning_curves_levscore_train, learning_curves_levscore_random_test, fig=fig, ax=ax, plot_type=plot_type)
 
     ax.set_ylabel('MSE')
-    ax.set_xlabel(r'$t$')
+    ax.set_xlabel(r'$t$ (size of train set)')
     if ylim:
         ax.set_ylim(ylim)
     if xlim:
