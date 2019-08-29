@@ -1,51 +1,46 @@
 * active_learning_code
+This is the accompanying code to my dissertation of the MRes in financial
+computing at UCL. This is not a package and might not work out of the box on any
+machine, some troubleshooting and change of code might be necessary for this to
+work, mainly the hardcoded path in ~PARAMETERS.py~ which has to be changed to
+the path to the git repo on your computer.
 
-This is the accompanying code repo for my active learning MRes dissertation
-
+The accompanying 
+ 
 ** Organization
-#+begin_src bash :results value org
-tree
-#+end_src
-
-#+RESULTS:
-#+begin_src org
+#+begin_export ascii
 .
 ├── data
-├── docs
-│   ├── commands.rst
-│   ├── conf.py
-│   ├── getting-started.rst
-│   ├── index.rst
-│   ├── make.bat
-│   └── Makefile
-├── LICENSE
-├── Makefile
-├── models
-├── notebooks
-├── README.md
-├── references
+│   ├── experiments
+│   ├── external
+│   └── synthetic
 ├── reports
-│   └── figures
-├── requirements.txt
-├── setup.py
-├── src
-│   ├── data
-│   │   ├── __init__.py
-│   │   └── make_dataset.py
-│   ├── features
-│   │   ├── build_features.py
-│   │   └── __init__.py
-│   ├── __init__.py
-│   ├── models
-│   │   ├── __init__.py
-│   │   ├── predict_model.py
-│   │   └── train_model.py
-│   └── visualization
-│       ├── __init__.py
-│       └── visualize.py
-├── test_environment.py
-└── tox.ini
-
-12 directories, 23 files
-#+end_src
-    
+│   ├── figures
+│   └── hyperparams
+├── scripts
+│   ├── cleaning
+│   ├── computing
+│   └── plotting
+└── src
+    ├── data
+    ├── features
+    ├── utils
+    └── visualization
+#+end_export
+** data
+The directory where all the data is held, including the ~experiments~ directory
+where the result of the experiments are output, including logs and learning
+curves, ~external~ which hold the external datasets and ~synthetic~ for
+synthetically created datasets. Note that the helper scripts for loading the
+datasets require that the ~external~ directory is populated with the correct datasets.
+** reports
+The figures and csv files containing the hyperparameters and dataset info will
+be saved here.
+** scripts
+One-off scripts for cleaning, calculating and plotting data using the code in ~src~.
+** src
+The source directory, containing code defining the functionality and algorithms.
+Most of the code can be found in ~utils~ and ~visualization~ and could use some
+refactoring. Nevertheless, there is a lot of functionality and algorithms here
+and could be useful for people wanting to build upon this work or explore FW /
+KH for subsampling a dataset or creating learning curves.
